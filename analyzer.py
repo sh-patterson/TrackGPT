@@ -66,8 +66,7 @@ def analyze_transcript(
         prompt = format_analysis_prompt(transcript_text, target_name)
 
         logging.debug("Sending analysis prompt to LLM...")
-        # You can uncomment the next line for debugging the prompt itself
-        # logging.debug(f"--- PROMPT START ---\n{prompt}\n--- PROMPT END ---")
+        # Log the prompt being sent for debugging
 
         response = client.chat.completions.create(
             model=Config.ANALYSIS_MODEL,
@@ -93,14 +92,18 @@ def analyze_transcript(
     # Catch specific errors from the retry block if they persist
     except AuthenticationError:
         logging.error("OpenAI Authentication Failed during analysis. Check API key.")
+        logging.debug("Re-raising AuthenticationError") # Added log
         # No need to return here, error will be raised by retry(reraise=True)
         raise # Re-raise to be caught by main
     except RateLimitError:
         logging.error("OpenAI Rate Limit Exceeded during analysis after retries.")
+        logging.debug("Re-raising RateLimitError") # Added log
         raise # Re-raise
     except APIError as e:
         logging.error(f"OpenAI API error occurred during analysis after retries: {e}")
+        logging.debug("Re-raising APIError") # Added log
         raise # Re-raise
     except Exception as e:
         logging.error(f"An unexpected error occurred during analysis: {e}", exc_info=True)
+        logging.debug("Re-raising unexpected exception") # Added log
         raise # Re-raise to be caught by main
