@@ -9,20 +9,34 @@ class ConfigError(Exception):
     pass
 
 class Config:
-    """Simplified configuration settings"""
+    """
+    Central configuration class for the application.
+    
+    All sensitive credentials are loaded from environment variables.
+    Required variables must be set in a .env file or environment.
+    
+    Usage:
+    1. Create a .env file with required variables
+    2. Access config via Config.CONSTANT_NAME
+    3. Call Config.validate() to check required settings
+    
+    Security Note:
+    - Never commit .env files to version control
+    - Use environment variables in production
+    """
 
     # --- Essential ---
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")  # Required OpenAI API key
 
     # --- Models ---
-    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "whisper-1")
-    ANALYSIS_MODEL: str = os.getenv("ANALYSIS_MODEL", "gpt-4o-mini") # Model for analysis
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "whisper-1")  # Default transcription model
+    ANALYSIS_MODEL: str = os.getenv("ANALYSIS_MODEL", "gpt-4.1-mini")  # Default analysis model
 
     # --- Processing ---
-    AUDIO_FORMAT: str = os.getenv("AUDIO_FORMAT", "mp3")
+    AUDIO_FORMAT: str = os.getenv("AUDIO_FORMAT", "mp3")  # Default audio format for downloads
 
     # --- Output ---
-    DEFAULT_OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "output")
+    DEFAULT_OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "output")  # Directory for generated files
 
     @classmethod
     def validate(cls) -> None:
