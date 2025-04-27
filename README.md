@@ -78,8 +78,8 @@ Ideal for communications professionals, researchers, journalists, and compliance
 
 ```bash
 # 1. Clone the repository (replace with the actual URL)
-# git clone https://github.com/your-username/TrackGPT.git
-# cd TrackGPT
+# git clone https://github.com/sh-patterson/TrackGPT-Audio
+# cd TrackGPT-Audio
 
 # 2. Create and activate a virtual environment (recommended)
 python -m venv .venv
