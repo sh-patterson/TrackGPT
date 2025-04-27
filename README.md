@@ -1,61 +1,75 @@
 # TrackGPT
 
-**Automated video & audio analysis, transcription, and targeted summarization**
+**Automated video & audio analysis, transcription, and targeted statement extraction with HTML reporting**
 
 ---
 
 ## Overview
 
-TrackGPT is a command-line tool that automates the process of downloading online videos or audio, transcribing the content, and generating a focused summary of statements made by a specified individual. Ideal for researchers, journalists, and transparency advocates, TrackGPT helps you:
+TrackGPT is a command-line tool that automates the process of researching video and audio content. It downloads the source, transcribes the audio using OpenAI's Whisper API, and utilizes an LLM (like GPT-4.1 Mini) with a specialized prompt to extract key statements, claims, commitments, or potentially sensitive remarks made by or directly concerning a specified target individual or entity. The results, including video metadata and the full transcript, are compiled into a user-friendly HTML report.
 
-- Save time by skimming long recordings
-- Pinpoint exact quotes from a target speaker
-- Track recurring claims or positions across multiple recordings
+Ideal for communications professionals, researchers, journalists, and compliance monitoring, TrackGPT helps you:
+
+- Quickly identify key messages and talking points.
+- Extract relevant statements from long recordings efficiently.
+- Monitor public statements for PR risks or opportunities.
+- Verify claims against the original transcript context.
 
 ---
 
 ## Features
 
-- **Content Download**  
-  Uses `yt-dlp` to fetch audio directly from URLs (e.g., YouTube, podcasts). Requires `ffmpeg` for audio extraction.
+- **Content Download & Metadata Extraction:**
+  Uses `yt-dlp` to fetch audio directly from URLs (e.g., YouTube, Vimeo) and extracts relevant metadata (title, uploader, date, etc.). Requires `ffmpeg` for audio format conversion.
 
-- **High-Quality Transcription**  
-  Leverages OpenAI’s Whisper model to produce accurate plain text transcripts.
+- **High-Quality Transcription:**
+  Leverages OpenAI’s Whisper API for accurate audio-to-text conversion.
 
-- **Targeted Statement Extraction**  
-  Analyzes the transcript using an LLM (like GPT-4o-mini) to filter for factual statements and claims made *by your specified target*.
+- **Structured Statement Extraction (PR Focus):**
+  Analyzes the transcript using an LLM (e.g., GPT-4.1 Mini) guided by a detailed prompt (`prompts.py`) focused on identifying statements relevant to communications analysis (factual claims, commitments, noteworthy opinions, sensitive remarks). Extracts findings into structured components (Headline, Speaker, Body, Source, Date) via text delimiters.
 
-- **Hot-Button Topic Detection**  
-  Identifies if the target discussed key political issues (climate change, immigration, healthcare, etc.) and provides direct quotes.
+- **Comprehensive HTML Reporting:**
+  Generates a self-contained HTML report (`_report.html`) that includes:
+    - A dynamically generated report title (Target, Source, Date).
+    - A detailed metadata section.
+    - Formatted bullet points summarizing key extracted statements, with citations and links back to the source URL.
+    - The full, searchable transcript for verification.
 
-- **Configurable Output**  
-  Saves two plaintext files in the specified output directory:
-  - `<safe_target_name>_<timestamp>_transcript.txt`
-  - `<safe_target_name>_<timestamp>_analysis.txt`
+- **Robust Error Handling:**
+  Includes API retry logic (`tenacity`) for transient network/API issues.
+
+- **Flexible Workflow:**
+  Allows skipping download, transcription, or extraction steps if intermediate files exist.
+
+- **Configurable:**
+  Uses a `.env` file for API keys and model selection.
 
 ---
 
 ## Prerequisites
 
-1.  **Python 3.8+**  
+1.  **Python 3.8+**
     Install from [python.org](https://www.python.org/).
 
-2.  **yt-dlp & ffmpeg**  
-    These external tools are required for downloading and processing audio.
+2.  **yt-dlp & ffmpeg**
+    These external command-line tools are required.
     -   `yt-dlp`: [Installation Guide](https://github.com/yt-dlp/yt-dlp#installation)
     -   `ffmpeg`: [Download & Setup](https://ffmpeg.org/download.html)
-    *Ensure both command-line tools are installed and accessible in your system's PATH.*
+    *Ensure both are installed and accessible in your system's PATH.*
 
 3.  **OpenAI API Key**
     -   Required for transcription (Whisper) and analysis (GPT model).
-    -   Sign up at [openai.com](https://openai.com/).
-    -   *Note: Using the OpenAI API may incur costs depending on usage. Check OpenAI's pricing.*
-    -   Create a file named `.env` in the project root directory with your API key:
+    -   Obtain from [OpenAI Platform](https://platform.openai.com/).
+    -   *Note: Using the OpenAI API incurs costs based on usage.*
+    -   Create a file named `.env` in the project root directory:
         ```dotenv
         OPENAI_API_KEY=your_openai_api_key_here
-        # Optional: Override default models
+
+        # Optional: Override default models (examples)
         # WHISPER_MODEL=whisper-1
-        # ANALYSIS_MODEL=gpt-4o-mini
+        # ANALYSIS_MODEL=gpt-4.1-mini
+        # AUDIO_FORMAT=mp3
+        # DEFAULT_OUTPUT_DIR=output
         ```
 
 ---
@@ -63,15 +77,19 @@ TrackGPT is a command-line tool that automates the process of downloading online
 ## Installation
 
 ```bash
-# 1. Clone the repository (replace with the actual URL if needed)
+# 1. Clone the repository (replace with the actual URL)
 # git clone https://github.com/your-username/TrackGPT.git
 # cd TrackGPT
 
-# 2. Install Python dependencies
+# 2. Create and activate a virtual environment (recommended)
+python -m venv .venv
+# Windows: .venv\Scripts\activate  | macOS/Linux: source .venv/bin/activate
+
+# 3. Install Python dependencies from requirements.txt
 pip install -r requirements.txt
 ```
 
-*(Ensure you are in the project's root directory where `requirements.txt` is located before running pip install)*
+*(Ensure `requirements.txt` exists and is up-to-date: `pip freeze > requirements.txt`)*
 
 ---
 
@@ -81,85 +99,85 @@ pip install -r requirements.txt
 python main.py <URL> "<Target Name>" [options]
 ```
 
--   `<URL>`: Link to the video or audio source (e.g., YouTube, podcast). **Enclose in quotes** if the URL contains special characters like `&`.
--   `<Target Name>`: The exact name of the person or entity whose statements you want to analyze (e.g., `"Jane Doe"`). **Enclose in quotes** if the name contains spaces.
+-   `<URL>`: Link to the video or audio source. **Enclose in quotes** if it contains special characters.
+-   `<Target Name>`: The exact name of the person/entity to analyze. **Enclose in quotes** if it contains spaces.
 
 **Common Options**
 
 | Flag                    | Description                                            | Default Value         |
 | :---------------------- | :----------------------------------------------------- | :-------------------- |
-| `-o`, `--output_dir <dir>` | Specify the directory to save output files          | `output/`             |
+| `-o`, `--output_dir <dir>` | Specify directory for output files                     | `output/`             |
 | `--skip_download`       | Skip download (requires existing audio file)           | `False`               |
 | `--skip_transcription`  | Skip transcription (requires existing transcript file) | `False`               |
-| `--skip_analysis`       | Skip analysis step                                     | `False`               |
+| `--skip_extraction`     | Skip analysis/extraction step                          | `False`               |
 | `-v`, `--verbose`       | Enable detailed debug logging                          | `False`               |
-| `-h`, `--help`          | Show this help message and exit                        |                       |
+| `-h`, `--help`          | Show help message and exit                             |                       |
 
 **Example**
 
 ```bash
+# Using an example target
 python main.py \
   "https://www.youtube.com/watch?v=abcdef12345" \
-  "John Smith" \
-  -o results/john_smith -v
+  "Kanye West" \
+  -o results/kanye_analysis -v
 ```
 
 This command:
 1.  Downloads audio from the YouTube video.
-2.  Transcribes the audio using Whisper.
-3.  Analyzes the transcript focusing on statements by "John Smith".
-4.  Saves the output files (`John_Smith_..._transcript.txt` and `John_Smith_..._analysis.txt`) into the `results/john_smith` directory.
+2.  Transcribes the audio using Whisper API.
+3.  Analyzes the transcript focusing on statements related to "Kanye West".
+4.  Saves the output files (`Kanye_West_..._transcript.txt` and `Kanye_West_..._report.html`) into the `results/kanye_analysis` directory.
 5.  Prints verbose logs during execution.
 
 ---
 
 ## Output Files
 
-Located in the specified output directory (`output/` by default):
+Located in the specified output directory (`output/` by default), named using the target and timestamp:
 
-1.  **`..._transcript.txt`**
-    -   Contains the full, plain text transcription generated by Whisper.
-2.  **`..._analysis.txt`**
-    -   Contains the LLM-generated analysis, typically including:
-        -   A section listing factual statements attributed to the target.
-        -   A section identifying any hot-button political issues discussed by the target, along with supporting quotes from the transcript.
+1.  **`<safe_target_name>_<timestamp>_transcript.txt`**
+    -   Contains the full, plain text transcription generated by the Whisper API. Useful for searching and verification.
 
-You can open these `.txt` files with any standard text editor (e.g., VS Code, Notepad, TextEdit).
+2.  **`<safe_target_name>_<timestamp>_report.html`**
+    -   A self-contained HTML file presenting the research findings.
+    -   **Contents:**
+        -   **Dynamic Title:** Based on target, source, and date.
+        -   **Metadata Section:** Key details about the source video/audio.
+        -   **Extracted Bullet Points Section:** Lists key points identified by the LLM analysis. Each bullet is formatted as:
+            `<b>Formatted Headline.</b> "Extracted Text Block" [Source, Formatted Date with Link]`
+            *(See Limitations section below regarding the "Extracted Text Block")*
+        -   **Full Transcript Section:** The complete transcript text within a scrollable `<pre>` block for reference.
+
+---
+
+## Limitations and Disclaimer
+
+*   **Quote Accuracy:** The "Extracted Bullet Points" section relies on an LLM interpreting the transcript based on the prompt in `prompts.py`. While the prompt includes **strict instructions** aiming for direct quotes, LLMs can still make errors. Accuracy depends heavily on transcript clarity and LLM interpretation.
+*   **Verification Required:** Users should **always verify the content of the extracted text blocks within the bullet points against the "Full Transcript" section** provided in the HTML report to ensure accuracy and context.
+*   **API Costs:** This tool uses paid OpenAI APIs. Monitor your usage.
+*   **Dependencies:** Requires `yt-dlp` and `ffmpeg` to be correctly installed and accessible in the system PATH.
 
 ---
 
 ## Troubleshooting
 
 -   **“`yt-dlp` not found” / “`ffmpeg` not found”**
-    -   Ensure the respective command-line tool is installed correctly.
-    -   Verify that the directory containing the executable (`yt-dlp` or `ffmpeg`) is listed in your system's `PATH` environment variable. You might need to restart your terminal/command prompt after installation or PATH modification.
-
--   **Transcription / Analysis Errors (API Key / OpenAI Issues)**
-    -   **Check API Key:** Double-check that the `OPENAI_API_KEY` in your `.env` file is correct and doesn't have extra spaces or characters.
-    -   **Check Account Status:** Log in to your OpenAI account dashboard to ensure your account is active, has sufficient funds/credits, and is not hitting usage limits.
-    -   **Network Issues:** Ensure you have a stable internet connection. Firewalls could potentially block API requests.
-
--   **Permission errors writing files**
-    -   Make sure the script has permission to create directories and write files in the location specified by `--output_dir`. Try using a directory within your user's home folder.
-
--   **File Not Found Errors (when using skip options)**
-    -   If using `--skip_download`, ensure an audio file with the expected name (`<safe_target_name>_<timestamp>.<audio_format>`) exists in the output directory.
-    -   If using `--skip_transcription`, ensure the transcript file (`<safe_target_name>_<timestamp>_transcript.txt`) exists in the output directory. The timestamp needs to match the one used or expected for the audio file.
+    -   Ensure installation and verify system PATH includes their locations. Restart terminal after PATH changes.
+-   **API Key / OpenAI Errors**
+    -   Double-check `.env` file for correct `OPENAI_API_KEY`.
+    -   Check OpenAI account status (active, funds/credits, usage limits).
+    -   Check network connection / firewalls.
+-   **Permission Errors**
+    -   Ensure write permissions for the output directory.
+-   **File Not Found (Skip Options)**
+    -   Verify the expected audio/transcript file exists in the output directory with the correct naming convention if using skip flags.
 
 ---
 
 ## Contributing
 
-Contributions are welcome!
-
-1.  Fork the repository.
-2.  Create a feature branch (`git checkout -b feature/YourAmazingFeature`).
-3.  Make your changes.
-4.  Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-5.  Push to the branch (`git push origin feature/YourAmazingFeature`).
-6.  Open a Pull Request.
-
-Please try to adhere to the existing code style and consider adding tests for new functionality.
+Contributions welcome! Please fork, create a feature branch, commit changes, push, and open a Pull Request. Adhere to existing code style.
 
 ---
 
