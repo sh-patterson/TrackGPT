@@ -80,7 +80,7 @@ This script streamlines the analysis of video/audio sources by performing the fo
     WHISPER_MODEL=whisper-1
 
     # Model for analysis/extraction (via OpenAI API)
-    ANALYSIS_MODEL=gpt-4o-mini # Or your preferred model like gpt-4-turbo
+    ANALYSIS_MODEL=gpt-4.1-mini # Or your preferred model like gpt-4o-mini
 
     # Directory for output files
     DEFAULT_OUTPUT_DIR=output
