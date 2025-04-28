@@ -17,11 +17,17 @@ from prompts import format_text_bullet_prompt
 # --- Dependency Checks ---
 try:
     import openai
+    # Explicitly import the required classes and exceptions from the openai library
     from openai import OpenAI, APIError, AuthenticationError, RateLimitError
     from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 except ImportError:
+    # You might want to refine this error message to pinpoint which library failed
+    # For example:
+    # except ImportError as e:
+    #     print(f"ERROR: Required library import failed: {e}. ", file=sys.stderr)
+    #     print("Ensure 'openai' and 'tenacity' are installed: pip install openai tenacity", file=sys.stderr)
     print(
-        "ERROR: Required libraries ('openai', 'tenacity') not found. "
+        "ERROR: Required libraries ('openai', 'tenacity') not found or failed to import. "
         "Install using: pip install openai tenacity",
         file=sys.stderr
     )
@@ -92,6 +98,20 @@ def legacy_analyze_transcript(
              raise AuthenticationError("OpenAI API key not configured.")
 
         client = OpenAI(api_key=Config.OPENAI_API_KEY)
+        
+        def format_analysis_prompt(transcript_text: str, target_name: str) -> str:
+            """Formats the analysis prompt for LLM processing."""
+            return f"""Analyze the following transcript for key statements made by or about {target_name}:
+
+Transcript:
+{transcript_text}
+
+Instructions:
+1. Identify all significant statements, claims, or commitments made by {target_name}
+2. Note any factual assertions made by others about {target_name}
+3. Highlight any potentially controversial or newsworthy statements
+4. Provide a concise summary of the key points"""
+
         # Format the prompt using the transcript and target name
         prompt = format_analysis_prompt(transcript_text, target_name)
 
