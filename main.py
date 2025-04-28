@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 try:
     from config import Config # Already validated on import
     from downloader import download_audio
-    from transcriber import transcribe_audio
+    from transcriber import transcribe_file
     # from analyzer import analyze_transcript # Keep if needed
     from analyzer import extract_raw_bullet_data_from_text # Import the V3 extractor
     # from output import format_report # Keep if needed
@@ -210,7 +210,7 @@ def main() -> None:
             # 3. Handle API response and errors
             # 4. Save transcript to file
 
-            transcript_text = transcribe_audio(current_audio_path_str)
+            transcript_text = transcribe_file(current_audio_path_str)
             if transcript_text:
                 if not save_text_file(transcript_text, transcript_path):
                     log.warning("Failed to save transcript file, but continuing analysis.")

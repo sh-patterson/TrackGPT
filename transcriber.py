@@ -1,125 +1,186 @@
-"""
-Module for transcribing audio files using OpenAI's Whisper API.
-
-Handles:
-- Audio file validation and size checks
-- API authentication and configuration
-- Error handling and rate limiting
-- Conversion of audio to text transcripts
-
-Requirements:
-- OpenAI API key (via Config.OPENAI_API_KEY)
-- Audio files under 25MB (Whisper API limit)
-"""
+import os
+import math
+import subprocess
 import logging
+import openai
+import time
 import sys
 from pathlib import Path
-from typing import Optional
-from config import Config
+import tempfile
+from typing import List
 
-# --- Dependency Checks ---
-try:
-    import openai
-    from openai import OpenAI, APIError, AuthenticationError, RateLimitError
-except ImportError:
-    print("ERROR: 'openai' library not found. Install using: pip install openai", file=sys.stderr)
-    sys.exit(1)
+logger = logging.getLogger(__name__)
 
-# --- Core Function ---
-def transcribe_audio(audio_filepath: str) -> Optional[str]:
-    """
-    Transcribes an audio file using OpenAI's Whisper API.
+# Constants
+CHUNK_SIZE_LIMIT = 24 * 1024 * 1024  # 24 MB
+DEFAULT_OVERLAP_SECONDS = 2
 
-    This function takes the path to an audio file, validates its existence and
-    size against the Whisper API's limits, and sends it to the API for
-    transcription. It handles API authentication, rate limiting, and other
-    potential API errors.
-
+def transcribe_file(audio_path: str, model: str = None, overlap_seconds: int = DEFAULT_OVERLAP_SECONDS) -> str:
+    """Transcribe an audio file using OpenAI Whisper API with automatic chunking for large files.
+    
     Args:
-        audio_filepath: The path to the audio file that needs to be transcribed.
-                        Supported formats typically include mp3, wav, m4a, etc.,
-                        depending on the Whisper API's capabilities.
-
+        audio_path: Path to the audio file to transcribe
+        model: Whisper model name (defaults to whisper-1 or WHISPER_MODEL env var)
+        overlap_seconds: Number of seconds to overlap between chunks (default 2)
+        
     Returns:
-        A string containing the transcribed text if the transcription is
-        successful. Returns None if the file is not found, exceeds the size
-        limit (with a warning), or if any API or unexpected errors occur.
+        Complete transcribed text as a single string
+        
+    Raises:
+        RuntimeError: If transcription fails completely
     """
-    audio_path = Path(audio_filepath)
-    logging.info(f"Attempting transcription for: {audio_path}")
+    # Set default model
+    model = model or os.getenv('WHISPER_MODEL', 'whisper-1')
+    logger.info(f"Starting transcription of {audio_path} using model {model}")
+    
+    # Get file size
+    file_size = os.path.getsize(audio_path)
+    logger.info(f"Audio file size: {file_size} bytes")
+    
+    if file_size <= CHUNK_SIZE_LIMIT:
+        logger.info("File is within size limit, processing directly")
+        try:
+            with open(audio_path, "rb") as audio_file:
+                response = openai.audio.transcriptions.create(
+                    model=model,
+                    file=audio_file
+                )
+            logger.info("Transcription successful")
+            return response.text
+        except Exception as e:
+            logger.error(f"Direct transcription failed: {str(e)}")
+            raise RuntimeError(f"Direct transcription failed: {str(e)}")
+    else:
+        logger.info("File exceeds size limit, processing in chunks")
+        return _transcribe_large_file(audio_path, model, overlap_seconds, file_size)
 
-    # Validate that the provided path points to an existing file
-    if not audio_path.is_file():
-        logging.error(f"Audio file not found or is not a file: {audio_path}")
-        return None
-
-    # --- File Validation ---
-    # Check the file size against the Whisper API's 25MB limit.
-    # The API might reject files larger than this or produce suboptimal results.
+def _transcribe_large_file(audio_path: str, model: str, overlap_seconds: int, file_size: int) -> str:
+    """Handle transcription of large audio files by splitting into chunks."""
     try:
-        file_size_mb = audio_path.stat().st_size / (1024 * 1024)
-        if file_size_mb > 25:
-            # Log a warning if the file size exceeds the recommended limit
-            logging.warning(
-                f"Audio file size ({file_size_mb:.2f} MB) exceeds 25MB limit for Whisper API. "
-                "Transcription may fail or be incomplete. "
-                "For large files, consider pre-processing (e.g., splitting) or using a library that handles chunking."
-            )
-            # We proceed despite the warning, as the API might still process it,
-            # albeit potentially with reduced quality or errors.
-    except OSError as e:
-        # Log a warning if unable to determine the file size
-        logging.warning(f"Could not determine file size for {audio_path}: {e}")
-
-    try:
-        # Validate that the OpenAI API key is configured
-        if not Config.OPENAI_API_KEY:
-            # This should ideally be caught during configuration validation,
-            # but included here as a safeguard.
-            raise AuthenticationError("OpenAI API key not configured.")
-
-        # --- API Client Setup ---
-        # Initialize the OpenAI client with the API key.
-        # The client library is designed to handle standard API practices
-        # like rate limiting and retries automatically for transient issues.
-        client = OpenAI(api_key=Config.OPENAI_API_KEY)
-
-        # Open the audio file in binary read mode
-        with open(audio_path, "rb") as audio_file:
-            logging.info(f"Sending {audio_path.name} to Whisper API (model: {Config.WHISPER_MODEL})...")
-            # Call the transcription creation endpoint
-            transcript_response = client.audio.transcriptions.create(
-                model=Config.WHISPER_MODEL,  # Specify the Whisper model to use (e.g., "whisper-1")
-                file=audio_file,             # Pass the audio file object
-                response_format="text"       # Request the response as plain text
-            )
-            # Other supported formats include: json, srt, verbose_json, vtt
-
-        logging.info("Transcription successful.")
-        # For the "text" response format, the result is a simple string
-        return str(transcript_response)
-
-    # --- Error Handling Strategy ---
-    # Handle specific exceptions raised by the OpenAI client library:
-    # 1. AuthenticationError: Occurs if the API key is invalid or missing.
-    # 2. RateLimitError: Occurs if the API usage exceeds the allowed rate limits.
-    # 3. APIError: Catches other general API-related errors (e.g., invalid parameters, server errors).
-    # 4. FileNotFoundError: Catches errors related to opening or reading the audio file.
-    # 5. Generic Exception: A catch-all for any other unexpected errors during the process.
-    except AuthenticationError:
-        logging.error("OpenAI Authentication Failed. Check your API key in config.py.")
-        return None
-    except RateLimitError:
-        logging.error("OpenAI Rate Limit Exceeded. Please wait and try again, or check your usage limits.")
-        return None
-    except APIError as e:
-        logging.error(f"OpenAI API error occurred during transcription: {e}")
-        # Log additional details from the API error for debugging
-        logging.debug(f"API Error Details - Status: {e.status_code}, Body: {e.body}")
-        return None
-    except FileNotFoundError:
-        logging.error(f"Audio file could not be opened at {audio_path}")
-        return None
+        # Get total duration using ffprobe
+        duration_cmd = [
+            'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1', audio_path
+        ]
+        total_duration = float(subprocess.check_output(duration_cmd).decode().strip())
+        logger.info(f"Total audio duration: {total_duration} seconds")
     except Exception as e:
-        logging.error(f"An unexpected error occurred during transcription: {e}", exc_info=True)
-        return None
+        logger.error(f"Failed to get audio duration: {str(e)}")
+        raise RuntimeError(f"Failed to get audio duration: {str(e)}")
+    
+    # Calculate chunk parameters
+    avg_bitrate = (file_size * 8) / total_duration
+    max_chunk_duration = (CHUNK_SIZE_LIMIT * 8) / avg_bitrate * 0.95
+    effective_chunk_duration = max(max_chunk_duration - overlap_seconds, 0.1)
+    num_chunks = math.ceil(total_duration / effective_chunk_duration)
+    
+    logger.info(f"Processing {num_chunks} chunks with {overlap_seconds}s overlap")
+    logger.debug(f"Max chunk duration: {max_chunk_duration}s, effective: {effective_chunk_duration}s")
+    
+    transcripts = []
+    temp_files_to_delete = []
+    
+    try:
+        for i in range(num_chunks):
+            start_time = i * effective_chunk_duration
+            if start_time >= total_duration:
+                break
+                
+            end_time = min(total_duration, start_time + max_chunk_duration)
+            chunk_path = _create_chunk_file(audio_path, start_time, end_time, i)
+            temp_files_to_delete.append(chunk_path)
+            
+            # Verify chunk size
+            chunk_size = os.path.getsize(chunk_path)
+            logger.debug(f"Chunk {i+1}: {start_time:.2f}-{end_time:.2f}s, size: {chunk_size} bytes")
+            if chunk_size > CHUNK_SIZE_LIMIT:
+                logger.warning(f"Chunk {i+1} exceeds size limit: {chunk_size} bytes")
+            
+            # Transcribe chunk
+            try:
+                logger.info(f"Transcribing chunk {i+1}/{num_chunks}")
+                with open(chunk_path, "rb") as chunk_file:
+                    response = openai.audio.transcriptions.create(
+                        model=model,
+                        file=chunk_file
+                    )
+                transcripts.append(response.text)
+                logger.debug(f"Chunk {i+1} transcription successful, length: {len(response.text)}")
+            except Exception as e:
+                logger.error(f"Failed to transcribe chunk {i+1}: {str(e)}")
+                continue
+                
+    finally:
+        _cleanup_temp_files(temp_files_to_delete)
+    
+    if not transcripts:
+        raise RuntimeError("Transcription failed: no chunks could be transcribed successfully")
+    
+    logger.info(f"Transcription completed with {len(transcripts)}/{num_chunks} successful chunks")
+    return " ".join(transcripts)
+
+def _create_chunk_file(audio_path: str, start_time: float, end_time: float, index: int) -> Path:
+    """Create a temporary chunk file using ffmpeg."""
+    audio_path = Path(audio_path)
+    chunk_path = Path(tempfile.gettempdir()) / f"{audio_path.stem}_part{index+1}{audio_path.suffix}"
+    
+    try:
+        subprocess.run([
+            'ffmpeg', '-y',
+            '-ss', str(start_time),
+            '-i', str(audio_path),
+            '-to', str(end_time),
+            '-c', 'copy',
+            str(chunk_path)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to create chunk {index+1}: {str(e)}")
+        raise RuntimeError(f"Failed to create audio chunk: {str(e)}")
+    
+    return chunk_path
+
+def _cleanup_temp_files(file_paths: List[Path]):
+    """Clean up temporary files with retry mechanism."""
+    if not file_paths:
+        return
+        
+    logger.info(f"Starting cleanup of {len(file_paths)} temporary files")
+    failed_deletions = 0
+    
+    for temp_path in file_paths:
+        if not temp_path.exists():
+            continue
+            
+        max_retries = 3
+        deleted = False
+        
+        for attempt in range(max_retries):
+            try:
+                temp_path.unlink()
+                logger.debug(f"Deleted temporary file: {temp_path}")
+                deleted = True
+                break
+            except PermissionError as e:
+                if sys.platform == "win32" and attempt < max_retries - 1:
+                    wait_time = 0.5 * (attempt + 1)
+                    logger.warning(
+                        f"PermissionError deleting {temp_path}, retry {attempt+1}/{max_retries} in {wait_time}s"
+                    )
+                    time.sleep(wait_time)
+                    continue
+                logger.error(f"Failed to delete {temp_path}: {str(e)}")
+                failed_deletions += 1
+                break
+            except FileNotFoundError:
+                logger.debug(f"File already deleted: {temp_path}")
+                deleted = True
+                break
+            except Exception as e:
+                logger.error(f"Failed to delete {temp_path}: {str(e)}")
+                failed_deletions += 1
+                break
+    
+    if failed_deletions:
+        logger.error(f"Failed to delete {failed_deletions} temporary files")
+    else:
+        logger.info("All temporary files cleaned up successfully")
